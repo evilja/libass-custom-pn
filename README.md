@@ -29,3 +29,28 @@ For pkg-config:
 export PKG_CONFIG_PATH="$HOME/.local/lib/pkgconfig:$PKG_CONFIG_PATH"
 pkg-config --cflags --libs libass-custom-pn-1
 ```
+
+## How to use it with ILL.Shapery and Karaskel?
+
+Installation:
+
+```sh
+cp extras/aegisub/aegisub-libass-custom-pn-1-ffi.patch ~/.aegisub/automation/include
+cd ~/.aegisub/automation/include
+
+patch --dry-run -p1 < aegisub-libass-custom-pn-1-ffi.patch
+patch --backup -p1 < aegisub-libass-custom-pn-1-ffi.patch
+rm -f aegisub-libass-custom-pn-1-ffi.patch
+```
+
+Removal:
+
+```sh
+cp extras/aegisub/aegisub-libass-custom-pn-1-ffi.patch ~/.aegisub/automation/include
+cd ~/.aegisub/automation/include
+
+patch -R -p1 < aegisub-libass-custom-pn-1-ffi.patch
+rm -f aegisub-libass-custom-pn-1-ffi.patch
+```
+
+
