@@ -19,9 +19,13 @@
 #ifndef LIBASS_METRICS_H
 #define LIBASS_METRICS_H
 
-#include <stdio.h>
+#include <stddef.h>
 
 #include "ass_types.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 /*
  * API to obtain text metrics and shape data for subtitles.
@@ -50,6 +54,10 @@
  * The individual shapes correspond to individual glyphs rendered in the run,
  * but due to font shaping there is no guarantee for these glyphs to
  * correspond one-to-one to characters in the run's text.
+ *
+ * Positions, advances, ascenders, descenders, and outline points are measured
+ * in output-frame pixels. Run positions use the output-frame origin. Outline
+ * points are relative to the position of their run.
  */
 
 
@@ -75,22 +83,21 @@ enum {
 typedef struct ass_metrics_outline {
     size_t n_points;
     size_t n_segments;
-    ASS_DVector *points;
-    char *segments;
+    ASS_DVector *points;  // NULL if n_points is zero
+    char *segments;       // NULL if n_segments is zero
 
-    struct ass_metrics_outline *next;   // Next outline, or NULL
+    struct ass_metrics_outline *next;   // Next glyph outline, or NULL
 } ASS_Metrics_Outline;
 
-/* ASS_RunMetrics is a set of metrics and shape data corresponding to a single run. */
+/* Metrics and shape data for one visually uniform run on one line. */
 typedef struct ass_run_metrics {
-    ASS_DVector pos;
-    ASS_DVector advance;
-    double asc;
-    double desc;
-    // TODO: Add more fields here?
+    ASS_DVector pos;      // Baseline origin in output-frame pixels
+    ASS_DVector advance;  // Shaped advance of all clusters in the run
+    double asc;           // Maximum ascender above the baseline
+    double desc;          // Maximum descender below the baseline
 
-    ASS_Metrics_Outline *fill;
-    ASS_Metrics_Outline *border;
+    ASS_Metrics_Outline *fill;    // Glyph fill outlines relative to pos
+    ASS_Metrics_Outline *border;  // Glyph border outlines relative to pos
 
     struct ass_run_metrics *next;    // Next run, or NULL
 } ASS_RunMetrics;
@@ -104,13 +111,19 @@ typedef struct ass_metrics {
 
 /**
  * \brief Get metrics for a frame, producing a list of ASS_Metrics.
- * The metrics returned live until the next call to ass_get_metrics, ass_render_frame,
- * or ass_renderer_done.
+ * Returns NULL if no event produces metrics, frame setup fails, or memory
+ * allocation fails. The returned list and all data it owns live until the next
+ * call to ass_get_metrics or ass_render_frame, or until ass_renderer_done.
+ * The caller must not free or modify any part of the list.
  *
  * \param priv renderer handle
  * \param track subtitle track
  * \param now video timestamp in milliseconds
  */
 ASS_Metrics *ass_get_metrics(ASS_Renderer *priv, ASS_Track *track, long long now);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* LIBASS_METRICS_H */

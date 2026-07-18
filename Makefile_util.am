@@ -1,9 +1,18 @@
 if ENABLE_TEST
 noinst_PROGRAMS += test/test
+check_PROGRAMS += test/metrics
+TESTS += test/metrics$(EXEEXT)
 endif
 test_test_SOURCES = test/test.c
 test_test_LDADD = libass/libass.la
 test_test_LDFLAGS = $(AM_LDFLAGS) $(LIBPNG_LIBS) -static
+
+test_metrics_SOURCES = test/metrics.c
+test_metrics_CPPFLAGS = $(AM_CPPFLAGS) \
+    -DTEST_FONT_PATH='"$(abs_top_srcdir)/compare/test/font1.ttf"'
+test_metrics_LDADD = libass/libass.la
+test_metrics_LDFLAGS = $(AM_LDFLAGS) -static
+EXTRA_DIST += compare/test/font1.ttf
 
 if ENABLE_PROFILE
 noinst_PROGRAMS += profile/profile

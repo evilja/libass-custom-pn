@@ -218,6 +218,7 @@ struct render_context {
     ASS_Style *style;
 
     bool collect_metrics;
+    bool metrics_failed;
     ASS_RunMetrics *run_metrics;
     ASS_RunMetrics *current_run_metrics;
 
@@ -327,6 +328,7 @@ struct ass_renderer {
 
     EventImages *eimg;          // temporary buffer for sorting rendered events
     int eimg_size;              // allocated buffer size
+    int metrics_count;          // number of initialized metrics entries in eimg
 
     // frame-global data
     int width, height;          // screen dimensions (the whole frame from ass_set_frame_size)
@@ -360,7 +362,7 @@ typedef struct {
 
 void ass_reset_render_context(RenderContext *state, ASS_Style *style);
 int ass_render_frame_internal(ASS_Renderer *priv, ASS_Track *track, long long now, int *detect_change, bool collect_metrics);
-void ass_outline_apply_transform(ASS_Outline *outline, BitmapHashKey *k);
+bool ass_outline_apply_transform(ASS_Outline *outline, BitmapHashKey *k);
 void ass_free_metrics(ASS_Renderer *priv);
 void ass_frame_ref(ASS_Image *img);
 void ass_frame_unref(ASS_Image *img);

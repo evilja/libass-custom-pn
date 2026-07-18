@@ -81,26 +81,33 @@ void ass_outline_free(ASS_Outline *outline)
  * \brief Allocate an ASS_Metrics_Outline's memory and copy the given
  * ASS_Outline's data into it.
  */
-void ass_metric_outline_copy(ASS_Metrics_Outline *metrics_outline, ASS_Outline *outline)
+bool ass_metric_outline_copy(ASS_Metrics_Outline *metrics_outline,
+                             const ASS_Outline *outline)
 {
-    metrics_outline->n_points = outline->n_points;
-    metrics_outline->n_segments = outline->n_segments;
-    metrics_outline->points = malloc(sizeof(ASS_DVector) * outline->n_points);
-    metrics_outline->segments = malloc(outline->n_segments);
-    if (!metrics_outline->points || !metrics_outline->segments) {
-        free(metrics_outline->points);
-        free(metrics_outline->segments);
-        metrics_outline->n_points = 0;
-        metrics_outline->n_segments = 0;
-        return;
+    memset(metrics_outline, 0, sizeof(*metrics_outline));
+    if (outline->n_points > SIZE_MAX / sizeof(*metrics_outline->points))
+        return false;
+
+    metrics_outline->points = outline->n_points ?
+        malloc(sizeof(*metrics_outline->points) * outline->n_points) : NULL;
+    metrics_outline->segments = outline->n_segments ?
+        malloc(outline->n_segments) : NULL;
+    if ((outline->n_points && !metrics_outline->points) ||
+            (outline->n_segments && !metrics_outline->segments)) {
+        ass_metric_outline_free(metrics_outline);
+        return false;
     }
 
-    memcpy(metrics_outline->segments, outline->segments, outline->n_segments);
+    metrics_outline->n_points = outline->n_points;
+    metrics_outline->n_segments = outline->n_segments;
+    if (outline->n_segments)
+        memcpy(metrics_outline->segments, outline->segments, outline->n_segments);
 
-    for (int i = 0; i < outline->n_points; i++) {
+    for (size_t i = 0; i < outline->n_points; i++) {
         metrics_outline->points[i].x = d6_to_double(outline->points[i].x);
         metrics_outline->points[i].y = d6_to_double(outline->points[i].y);
     }
+    return true;
 }
 
 /*
