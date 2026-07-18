@@ -123,11 +123,23 @@ endif
 fake_installed_headers = []
 subdir('ass')
 
+# Keep this build loadable alongside a system libass.  The distinct filename
+# avoids loader collisions, while symbolic binding prevents ELF interposition
+# from redirecting internal calls to an already-loaded system libass.
+libass_link_args = []
+if host_system not in ['windows', 'darwin']
+    symbolic_link_arg = '-Wl,-Bsymbolic'
+    if cc.has_link_argument(symbolic_link_arg)
+        libass_link_args += symbolic_link_arg
+    endif
+endif
+
 libass = library(
-    'ass',
+    'ass-custom-pn-1',
     libass_src,
     config_h,
     link_with: libass_link_with,
+    link_args: libass_link_args,
     version: libass_so_version,
     # This emulates the GNU libtool compat/current versioning computation
     darwin_versions: [
@@ -147,4 +159,4 @@ libass_dep = declare_dependency(
     sources: fake_installed_headers,
 )
 
-install_headers(libass_headers, subdir: 'ass')
+install_headers(libass_headers, subdir: 'libass-custom-pn-1/ass')

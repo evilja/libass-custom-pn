@@ -410,8 +410,10 @@ endif
 pkg = import('pkgconfig')
 pkg.generate(
     libass,
-    name: 'libass',
-    description: 'libass is an SSA/ASS subtitles rendering library',
+    filebase: 'libass-custom-pn-1',
+    name: 'libass-custom-pn-1',
+    description: 'Custom libass build with metrics API',
+    subdirs: 'libass-custom-pn-1',
 )
 # `libass_dep` comes from subdir('libass')
 meson.override_dependency('libass', libass_dep)
