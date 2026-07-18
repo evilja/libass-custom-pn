@@ -1,0 +1,439 @@
+diff --git a/ILL/ILL/Font/Unx.moon b/ILL/ILL/Font/Unx.moon
+index f7afa28c0d170f526b2d81251b0dc43c5c394969..4a559c2016284a94e07485d48c39be11ee056591 100644
+--- a/ILL/ILL/Font/Unx.moon
++++ b/ILL/ILL/Font/Unx.moon
+@@ -420,6 +420,7 @@ cdef [[
+ import Math from require "ILL.ILL.Math"
+ import UTF8 from require "ILL.ILL.UTF8"
+ import Init from require "ILL.ILL.Font.Init"
++LibassMetrics = require "pn.libass_metrics"
+ 
+ OUTLINE_MAX = bit.lshift(1, 28) - 1
+ 
+@@ -694,99 +695,29 @@ class FreeType extends Init
+ 			external_leading: 0
+ 		}
+ 
+-	-- Get text extents
+-	getTextExtents: (text) =>
+-		face_size, width = @face[0], 0
+-		@callBackCharsGlyph text, (glyph) ->
+-			width += tonumber(glyph.metrics.horiAdvance) + (@hspace * FONT_UPSCALE)
++	-- Build the style table consumed by libass-custom-pn-1. Shape extraction
++	-- stays unscaled because Shapery applies \fscx/\fscy in Line.expand.
++	libassStyle: (unscaled = false) =>
+ 		{
+-			width: (width / FONT_UPSCALE) * @xscale
+-			height: @height * @yscale
++			fontname: @family
++			fontsize: @size
++			bold: @bold
++			italic: @italic
++			underline: @underline
++			strikeout: @strikeout
++			scale_x: unscaled and 100 or @xscale * 100
++			scale_y: unscaled and 100 or @yscale * 100
++			spacing: @hspace
+ 		}
+ 
+-	-- Converts text to ASS shape
++	-- Get shaped text extents from the same libass implementation as rendering.
++	getTextExtents: (text) =>
++		width, height = LibassMetrics.text_extents @libassStyle!, text
++		{:width, :height}
++
++	-- Convert HarfBuzz-shaped libass fill outlines to an ASS drawing.
+ 	getTextToShape: (text) =>
+-		paths, x = {}, 0
+-		@callBackCharsGlyph text, (glyph) ->
+-			build, path = {}, {}
+-			if @bold and @weight < 700 and not @found_bold
+-				ass_glyph_embolden glyph
+-			if @italic and not @found_italic
+-				ass_glyph_italicize glyph
+-			-- move the outline points to the correct position
+-			for i = 0, glyph.outline.n_points - 1
+-				glyph.outline.points[i].x += x
+-				glyph.outline.points[i].y = (glyph.outline.points[i].y * -1) + @ascender * FONT_UPSCALE
+-			-- callbacks for outline decomposition
+-			move_to = (to, user) ->
+-				table.insert build, {
+-					"m"
+-					tonumber(to.x) * FONT_DOWNSCALE
+-					tonumber(to.y) * FONT_DOWNSCALE
+-				}
+-				return 0
+-			line_to = (to, user) ->
+-				table.insert build, {
+-					"l"
+-					tonumber(to.x) * FONT_DOWNSCALE
+-					tonumber(to.y) * FONT_DOWNSCALE
+-				}
+-				return 0
+-			conic_to = (control, to, user) ->
+-				table.insert build, {
+-					"c"
+-					tonumber(control.x) * FONT_DOWNSCALE
+-					tonumber(control.y) * FONT_DOWNSCALE
+-					tonumber(to.x) * FONT_DOWNSCALE
+-					tonumber(to.y) * FONT_DOWNSCALE
+-				}
+-				return 0
+-			cubic_to = (control1, control2, to, user) ->
+-				table.insert build, {
+-					"b"
+-					tonumber(control1.x) * FONT_DOWNSCALE
+-					tonumber(control1.y) * FONT_DOWNSCALE
+-					tonumber(control2.x) * FONT_DOWNSCALE
+-					tonumber(control2.y) * FONT_DOWNSCALE
+-					tonumber(to.x) * FONT_DOWNSCALE
+-					tonumber(to.y) * FONT_DOWNSCALE
+-				}
+-				return 0
+-			-- Define outline functions
+-			outline_funcs = new "FT_Outline_Funcs[1]"
+-			outline_funcs[0].move_to = cast "FT_Outline_MoveToFunc", move_to
+-			outline_funcs[0].line_to = cast "FT_Outline_LineToFunc", line_to
+-			outline_funcs[0].conic_to = cast "FT_Outline_ConicToFunc", conic_to
+-			outline_funcs[0].cubic_to = cast "FT_Outline_CubicToFunc", cubic_to
+-			-- Decompose outline
+-			err = freetype.FT_Outline_Decompose glyph.outline, outline_funcs, nil
+-			if err != 0
+-				error "Failed to load the freetype outline decompose", 2
+-			-- Frees up memory stored for callbacks
+-			outline_funcs[0].move_to\free!
+-			outline_funcs[0].line_to\free!
+-			outline_funcs[0].conic_to\free!
+-			outline_funcs[0].cubic_to\free!
+-			-- Converts quadratic curves to bezier
+-			for i = 1, #build
+-				val = build[i]
+-				if val[1] == "c"
+-					lst = build[i - 1]
+-					p1x = lst[#lst - 1]
+-					p1y = lst[#lst]
+-					p4x = val[4]
+-					p4y = val[5]
+-					p2x = p1x + 2/3 * (val[2] - p1x)
+-					p2y = p1y + 2/3 * (val[3] - p1y)
+-					p3x = p4x + 2/3 * (val[2] - p4x)
+-					p3y = p4y + 2/3 * (val[3] - p4y)
+-					build[i] = {"b", p2x, p2y, p3x, p3y, p4x, p4y}
+-				path[i] = table.concat build[i], " "
+-			table.insert paths, table.concat path, " "
+-			if @underline or @strikeout
+-				table.insert paths, ass_get_glyph_outline @face[0], @underline, @strikeout, x, @ascender * FONT_UPSCALE
+-			x += tonumber(glyph.metrics.horiAdvance) + (@hspace * FONT_UPSCALE)
+-		return table.concat paths, " "
++		LibassMetrics.text_to_shape @libassStyle(true), text
+ 
+ 	-- Gets the complete list of fonts available on the system
+ 	getFonts: =>
+diff --git a/karaskel-auto4.lua b/karaskel-auto4.lua
+new file mode 100644
+index 0000000000000000000000000000000000000000..d26b86cf0762f31b34d083d31019aa0f1c16722f
+--- /dev/null
++++ b/karaskel-auto4.lua
+@@ -0,0 +1,13 @@
++-- User include-path override: route Karaoke Templater sizing through the
++-- libass-custom-pn-1 metrics API, then load Aegisub's stock implementation.
++local libass_metrics = require "pn.libass_metrics"
++aegisub.text_extents = libass_metrics.text_extents
++
++local stock_path = aegisub.decode_path("?data/automation/include/karaskel-auto4.lua")
++local file, open_error = io.open(stock_path, "rb")
++if not file then error(open_error, 2) end
++local source = file:read("*a")
++file:close()
++local chunk, load_error = loadstring(source, "@" .. stock_path)
++if not chunk then error(load_error, 2) end
++return chunk()
+diff --git a/pn/libass_metrics.lua b/pn/libass_metrics.lua
+new file mode 100644
+index 0000000000000000000000000000000000000000..686691d50133140e2e1ca5f9ab2132552d9daf6d
+--- /dev/null
++++ b/pn/libass_metrics.lua
+@@ -0,0 +1,283 @@
++local ffi = require "ffi"
++local bit = require "bit"
++
++ffi.cdef [[
++typedef struct ass_library ASS_Library;
++typedef struct ass_renderer ASS_Renderer;
++typedef struct ass_track ASS_Track;
++typedef struct ass_event ASS_Event;
++
++typedef struct { double x, y; } ASS_DVector;
++typedef struct ass_metrics_outline {
++    size_t n_points;
++    size_t n_segments;
++    ASS_DVector *points;
++    char *segments;
++    struct ass_metrics_outline *next;
++} ASS_Metrics_Outline;
++typedef struct ass_run_metrics {
++    ASS_DVector pos;
++    ASS_DVector advance;
++    double asc;
++    double desc;
++    ASS_Metrics_Outline *fill;
++    ASS_Metrics_Outline *border;
++    struct ass_run_metrics *next;
++} ASS_RunMetrics;
++typedef struct ass_metrics {
++    ASS_Event *event;
++    ASS_RunMetrics *runs;
++    struct ass_metrics *next;
++} ASS_Metrics;
++
++ASS_Library *ass_library_init(void);
++void ass_library_done(ASS_Library *priv);
++typedef void (*ASS_MessageCallback)(int level, const char *format,
++                                    void *args, void *data);
++void ass_set_message_cb(ASS_Library *priv, ASS_MessageCallback msg_cb,
++                        void *data);
++ASS_Renderer *ass_renderer_init(ASS_Library *library);
++void ass_renderer_done(ASS_Renderer *priv);
++void ass_set_frame_size(ASS_Renderer *priv, int w, int h);
++void ass_set_storage_size(ASS_Renderer *priv, int w, int h);
++void ass_set_fonts(ASS_Renderer *priv, const char *default_font,
++                   const char *default_family, int dfp,
++                   const char *config, int update);
++ASS_Track *ass_read_memory(ASS_Library *library, char *buf,
++                           size_t bufsize, const char *codepage);
++void ass_free_track(ASS_Track *track);
++ASS_Metrics *ass_get_metrics(ASS_Renderer *priv, ASS_Track *track,
++                             long long now);
++unsigned ass_library_version(void);
++]]
++
++local function load_libass()
++    local home = os.getenv("HOME")
++    local candidates = {
++        home and (home .. "/.local/lib/libass-custom-pn-1.so.9") or nil,
++        "ass-custom-pn-1",
++        "libass-custom-pn-1.so.9",
++    }
++    local errors = {}
++    for _, name in ipairs(candidates) do
++        if name then
++            local ok, library = pcall(ffi.load, name)
++            if ok then return library end
++            errors[#errors + 1] = tostring(library)
++        end
++    end
++    error("could not load libass-custom-pn-1: " .. table.concat(errors, "; "), 2)
++end
++
++local libass = load_libass()
++local library = libass.ass_library_init()
++if library == nil then error("libass-custom-pn-1: ass_library_init failed", 2) end
++
++local silent_message_callback = ffi.cast("ASS_MessageCallback", function() end)
++libass.ass_set_message_cb(library, silent_message_callback, nil)
++
++local renderer = libass.ass_renderer_init(library)
++if renderer == nil then
++    libass.ass_library_done(library)
++    error("libass-custom-pn-1: ass_renderer_init failed", 2)
++end
++
++-- The renderer finalizer owns the library too, preserving destruction order.
++renderer = ffi.gc(renderer, function(value)
++    libass.ass_renderer_done(value)
++    libass.ass_library_done(library)
++end)
++libass.ass_set_frame_size(renderer, 384, 288)
++libass.ass_set_storage_size(renderer, 384, 288)
++libass.ass_set_fonts(renderer, nil, "sans-serif", 1, nil, 0)
++
++local M = {
++    version = tonumber(libass.ass_library_version()),
++    _message_callback = silent_message_callback,
++}
++
++local function number(value, fallback)
++    value = tonumber(value)
++    if value == nil then return fallback end
++    return value
++end
++
++local function enabled(value)
++    return value == true or number(value, 0) ~= 0
++end
++
++local function clean_font_name(value)
++    return tostring(value or "sans-serif"):gsub("[,%c]", " ")
++end
++
++local function ass_script(style, text, unscaled)
++    local font = clean_font_name(style.fontname or style.font or style.family)
++    local fontsize = math.max(number(style.fontsize or style.size, 20), 0.01)
++    local scale_x = unscaled and 100 or number(style.scale_x or style.scalex, 100)
++    local scale_y = unscaled and 100 or number(style.scale_y or style.scaley, 100)
++    local spacing = number(style.spacing or style.hspace, 0)
++    local bold = enabled(style.bold) and -1 or 0
++    local italic = enabled(style.italic) and -1 or 0
++    local underline = enabled(style.underline) and -1 or 0
++    local strikeout = enabled(style.strikeout) and -1 or 0
++    local encoding = math.floor(number(style.encoding, 1))
++
++    text = tostring(text or ""):gsub("\r", ""):gsub("\n", "\\N")
++
++    return string.format([[[Script Info]
++ScriptType: v4.00+
++PlayResX: 384
++PlayResY: 288
++WrapStyle: 2
++
++[V4+ Styles]
++Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
++Style: Default,%s,%.12g,&H00FFFFFF,&H000000FF,&H00000000,&H00000000,%d,%d,%d,%d,%.12g,%.12g,%.12g,0,1,0,0,7,0,0,0,%d
++
++[Events]
++Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
++Dialogue: 0,0:00:00.00,0:00:01.00,Default,,0,0,0,,%s
++]], font, fontsize, bold, italic, underline, strikeout,
++        scale_x, scale_y, spacing, encoding, text)
++end
++
++local function with_metrics(style, text, unscaled, callback)
++    if text == nil or text == "" then return nil end
++    local script = ass_script(style or {}, text, unscaled)
++    local track = libass.ass_read_memory(
++        library, ffi.cast("char *", script), #script, nil)
++    if track == nil then error("libass-custom-pn-1: failed to parse generated ASS", 3) end
++
++    local ok, result = pcall(function()
++        local metrics = libass.ass_get_metrics(renderer, track, 500)
++        if metrics == nil then return nil end
++        return callback(metrics)
++    end)
++    libass.ass_free_track(track)
++    if not ok then error(result, 3) end
++    return result
++end
++
++local function metric_bounds(metrics)
++    local min_x, max_x, min_y, max_y, descent
++    local event = metrics
++    while event ~= nil do
++        local run = event.runs
++        while run ~= nil do
++            local x1 = tonumber(run.pos.x)
++            local x2 = x1 + tonumber(run.advance.x)
++            local top = tonumber(run.pos.y) - tonumber(run.asc)
++            local bottom = tonumber(run.pos.y) + tonumber(run.desc)
++            min_x = math.min(min_x or x1, x1, x2)
++            max_x = math.max(max_x or x2, x1, x2)
++            min_y = math.min(min_y or top, top)
++            max_y = math.max(max_y or bottom, bottom)
++            descent = math.max(descent or 0, tonumber(run.desc))
++            run = run.next
++        end
++        event = event.next
++    end
++    if not min_x then return nil end
++    return min_x, max_x, min_y, max_y, descent
++end
++
++function M.text_extents(style, text)
++    local result = with_metrics(style, text, false, function(metrics)
++        local min_x, max_x, min_y, max_y, descent = metric_bounds(metrics)
++        if not min_x then return nil end
++        return {max_x - min_x, max_y - min_y, descent, 0}
++    end)
++    if not result then return 0, 0, 0, 0 end
++    return unpack(result)
++end
++
++local function format_number(value)
++    if math.abs(value) < 0.0000005 then value = 0 end
++    local result = string.format("%.6f", value)
++    result = result:gsub("(%..-)0+$", "%1"):gsub("%.$", "")
++    return result
++end
++
++local function point(outline, index, run, origin_x, origin_y)
++    local value = outline.points[index]
++    return tonumber(run.pos.x) + tonumber(value.x) - origin_x,
++           tonumber(run.pos.y) + tonumber(value.y) - origin_y
++end
++
++local function append_outline(parts, outline, run, origin_x, origin_y)
++    local point_index = 0
++    local segment_index = 0
++    while segment_index < tonumber(outline.n_segments) do
++        local contour_start = point_index
++        local sx, sy = point(outline, contour_start, run, origin_x, origin_y)
++        parts[#parts + 1] = "m " .. format_number(sx) .. " " .. format_number(sy)
++
++        while segment_index < tonumber(outline.n_segments) do
++            local flags = tonumber(outline.segments[segment_index])
++            local order = bit.band(flags, 3)
++            local contour_end = bit.band(flags, 4) ~= 0
++            if order < 1 or order > 3 then
++                error("libass-custom-pn-1: invalid outline segment", 3)
++            end
++
++            local ex, ey
++            if contour_end then
++                ex, ey = point(outline, contour_start, run, origin_x, origin_y)
++            else
++                ex, ey = point(outline, point_index + order, run, origin_x, origin_y)
++            end
++
++            if order == 1 then
++                parts[#parts + 1] = "l " .. format_number(ex) .. " " .. format_number(ey)
++            elseif order == 2 then
++                local x0, y0 = point(outline, point_index, run, origin_x, origin_y)
++                local qx, qy = point(outline, point_index + 1, run, origin_x, origin_y)
++                local c1x, c1y = x0 + (qx - x0) * 2 / 3, y0 + (qy - y0) * 2 / 3
++                local c2x, c2y = ex + (qx - ex) * 2 / 3, ey + (qy - ey) * 2 / 3
++                parts[#parts + 1] = table.concat({
++                    "b", format_number(c1x), format_number(c1y),
++                    format_number(c2x), format_number(c2y),
++                    format_number(ex), format_number(ey),
++                }, " ")
++            else
++                local c1x, c1y = point(outline, point_index + 1, run, origin_x, origin_y)
++                local c2x, c2y = point(outline, point_index + 2, run, origin_x, origin_y)
++                parts[#parts + 1] = table.concat({
++                    "b", format_number(c1x), format_number(c1y),
++                    format_number(c2x), format_number(c2y),
++                    format_number(ex), format_number(ey),
++                }, " ")
++            end
++
++            point_index = point_index + order
++            segment_index = segment_index + 1
++            if contour_end then break end
++        end
++    end
++end
++
++function M.text_to_shape(style, text)
++    return with_metrics(style, text, true, function(metrics)
++        local origin_x, _, origin_y = metric_bounds(metrics)
++        if not origin_x then return "" end
++        local parts = {}
++        local event = metrics
++        while event ~= nil do
++            local run = event.runs
++            while run ~= nil do
++                local outline = run.fill
++                while outline ~= nil do
++                    if tonumber(outline.n_points) > 0 and tonumber(outline.n_segments) > 0 then
++                        append_outline(parts, outline, run, origin_x, origin_y)
++                    end
++                    outline = outline.next
++                end
++                run = run.next
++            end
++            event = event.next
++        end
++        return table.concat(parts, " ")
++    end) or ""
++end
++
++return M
